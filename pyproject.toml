@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stresstest-fin"
+version = "0.1.0"
+description = "Reproducible evaluation of financial-risk models under dataset shift"
+requires-python = ">=3.10"
+dependencies = ["pandas>=2.2", "numpy>=1.26", "scikit-learn>=1.5", "pyyaml>=6.0", "joblib>=1.4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "jupyter>=1.0", "nbformat>=5.10", "matplotlib>=3.8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

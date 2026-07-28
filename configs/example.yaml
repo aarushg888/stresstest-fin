@@ -1,0 +1,12 @@
+dataset_path: data/raw/credit_risk.csv
+target_column: default
+id_column: null
+time_column: null
+protected_group_column: null
+positive_label: 1
+random_seed: 42
+test_size: 0.25
+models: [logistic_regression, hist_gradient_boosting, random_forest]
+explanation:
+  perturbation_fraction: 0.02
+  sample_size: 100
