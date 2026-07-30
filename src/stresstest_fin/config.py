@@ -9,7 +9,7 @@ class Config:
     id_column: str | None = None
     time_column: str | None = None
     protected_group_column: str | None = None
-    positive_label: int = 1
+    positive_label: str | int = 1
     random_seed: int = 42
     test_size: float = 0.25
     models: tuple[str, ...] = ("logistic_regression",)
