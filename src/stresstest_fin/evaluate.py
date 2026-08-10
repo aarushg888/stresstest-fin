@@ -21,7 +21,8 @@ def group_audit(y, p, group, threshold=0.5):
     return rows
 
 def explanation_stability_proxy(model, X, numeric_columns, fraction=0.02, sample_size=100, seed=42):
-    if not numeric_columns: return {"available": False, "reason": "no numeric features"}
+    if not numeric_columns:
+        return {"available": False, "reason": "no numeric features"}
     sample = X.sample(min(sample_size, len(X)), random_state=seed).copy()
     base = model.predict_proba(sample)[:, 1]
     perturbed = sample.copy()

@@ -9,3 +9,4 @@ data/processed/*
 artifacts/
 .ipynb_checkpoints/
 .env
+*.egg-info/
