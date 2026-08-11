@@ -73,11 +73,19 @@ def main():
                         help="Permutation-importance repeats.")
     parser.add_argument("--perm-top-k", type=int, default=10,
                         help="Top-K for permutation Jaccard.")
+    parser.add_argument("--calibrate", choices=["sigmoid", "isotonic"], default=None,
+                        help="Override calibration method for logistic regression.")
+    parser.add_argument("--hgb-balanced-weights", action="store_true",
+                        help="Override: apply inverse-frequency sample weights to HGB.")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     if args.seed is not None:
         cfg = replace(cfg, random_seed=args.seed)
+    if args.calibrate is not None:
+        cfg = replace(cfg, calibration=args.calibrate)
+    if args.hgb_balanced_weights:
+        cfg = replace(cfg, hgb_sample_weight_balanced=True)
 
     df = load_and_validate(cfg)
     train, test, split_type = split_data(df, cfg)
@@ -112,6 +120,8 @@ def main():
         "n_eval_used_for_permutation_and_sensitivity": len(X_eval),
         "max_train_cap": args.max_train,
         "max_eval_cap": args.max_eval,
+        "calibration": cfg.calibration,
+        "hgb_sample_weight_balanced": cfg.hgb_sample_weight_balanced,
         "warning": (
             "Research/education only. Do not use results for automated "
             "or high-impact decisions."
@@ -127,7 +137,24 @@ def main():
         )
 
     for name in cfg.models:
-        model = models[name].fit(X_train, y_train)
+        model = models[name]
+
+        fit_kwargs = {}
+        if name == "hist_gradient_boosting" and cfg.hgb_sample_weight_balanced:
+            y_np = y_train.to_numpy()
+            pos = int(y_np.sum())
+            neg = len(y_np) - pos
+            fit_kwargs["model__sample_weight"] = np.where(
+                y_np == 1, len(y_np) / max(pos, 1), len(y_np) / max(neg, 1)
+            )
+
+        if name == "logistic_regression" and cfg.calibration:
+            from sklearn.calibration import CalibratedClassifierCV
+            model = CalibratedClassifierCV(
+                estimator=model, method=cfg.calibration, cv=3
+            )
+
+        model.fit(X_train, y_train, **fit_kwargs)
         probabilities = model.predict_proba(X_test)[:, 1]
 
         prediction_stability = explanation_stability_proxy(

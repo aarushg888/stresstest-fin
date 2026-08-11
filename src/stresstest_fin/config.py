@@ -14,6 +14,8 @@ class Config:
     test_size: float = 0.25
     models: tuple[str, ...] = ("logistic_regression",)
     explanation: dict | None = None
+    calibration: str | None = None  # "sigmoid" | "isotonic" — applied to LR only
+    hgb_sample_weight_balanced: bool = False  # inverse-frequency weights for HGB
 
 def load_config(path: str) -> Config:
     raw = yaml.safe_load(Path(path).read_text())

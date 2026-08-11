@@ -13,7 +13,20 @@ def load_and_validate(cfg: Config) -> pd.DataFrame:
 
 def split_data(df: pd.DataFrame, cfg: Config):
     if cfg.time_column:
-        ordered = df.assign(**{cfg.time_column: pd.to_datetime(df[cfg.time_column])}).sort_values(cfg.time_column)
+        col = df[cfg.time_column]
+        # Numeric recency proxies (e.g. days-before-application) sort as-is;
+        # actual datetimes are parsed. Missing values are placed first so
+        # they land in the training (past) partition.
+        if pd.api.types.is_numeric_dtype(col):
+            ordered = df.sort_values(
+                cfg.time_column, na_position="first"
+            ).reset_index(drop=True)
+        else:
+            ordered = (
+                df.assign(**{cfg.time_column: pd.to_datetime(col)})
+                .sort_values(cfg.time_column)
+                .reset_index(drop=True)
+            )
         n_test = max(1, int(len(ordered) * cfg.test_size))
         train, test = ordered.iloc[:-n_test].copy(), ordered.iloc[-n_test:].copy()
         split_type = "chronological"

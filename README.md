@@ -20,6 +20,7 @@ When a credit-risk model is transferred across a time period or defined populati
 | --- | --- | --- |
 | FICO HELOC (missing vs preserve-codes vs sentinel-aware) | completed | `configs/heloc*.yaml`, `artifacts/heloc_*` |
 | Home Credit Default Risk (external validation, baseline vs `DAYS_EMPLOYED` sentinel-aware) | completed | `configs/home_credit*.yaml`, `artifacts/home_credit_*` |
+| Home Credit Phase 2 (enriched aux tables, temporal recency split, LR calibration, HGB balance) | completed | `configs/home_credit_{enriched,temporal}.yaml`, `artifacts/home_credit_{enriched,temporal,cal,hgb}*` |
 
 See `docs/experiment_protocol.md` for the full methodology and
 `docs/home_credit_results.md` for the Home Credit numbers.
@@ -60,6 +61,26 @@ python scripts/summarize_home_credit.py --inputs "artifacts/home_credit_sentinel
 python scripts/compare_home_credit_variants.py --baseline artifacts/home_credit_baseline_summary.csv --sentinel artifacts/home_credit_sentinel_aware_summary.csv --output artifacts/home_credit_baseline_vs_sentinel_aware.csv
 python scripts/summarize_home_credit_permutation.py --inputs "artifacts/home_credit_*_permutation_seed_*.json"
 ```
+
+## Key Results (Home Credit Default Risk)
+
+| Phase | Models | AUC (mean) | AP (mean) | Brier (mean) | ECE-10 (mean) | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Raw features, stratified (5 seeds) | LR / HGB / RF | 0.741 / 0.744 / 0.737 | 0.215 / 0.222 / 0.211 | 0.203 / 0.069 / 0.117 | 0.337 / 0.003 / 0.209 | Baseline |
+| Raw + sentinel-aware (5 seeds) | LR / HGB / RF | 0.741 / 0.743 / 0.736 | 0.215 / 0.220 / 0.209 | 0.202 / 0.069 / 0.117 | 0.336 / 0.002 / 0.209 | ΔAUC < 0.002 |
+| **Enriched (aux tables, 5 seeds)** | **LR / HGB / RF** | **0.758 / 0.759 / 0.750** | **0.231 / 0.239 / 0.222** | **0.194 / 0.068 / 0.100** | **0.319 / 0.004 / 0.171** | **+0.013–0.017 AUC** |
+| Enriched + temporal (5 seeds) | LR / HGB / RF | 0.758 / 0.757 / 0.749 | 0.248 / 0.254 / 0.239 | 0.207 / 0.074 / 0.108 | 0.327 / 0.005 / 0.177 | Drift: Brier/ECE ↑ |
+| **Enriched + LR isotonic cal. (5 seeds)** | **LR** | **0.758** | **0.231** | **0.068** | **0.002** | **ECE 0.319→0.002** |
+| **Enriched full-scale (2 seeds, 230k)** | **LR / HGB / RF** | **0.765 / 0.773 / 0.760** | **0.241 / 0.259 / 0.233** | **0.195 / 0.067 / 0.099** | **0.325 / 0.002 / 0.169** | **+0.007–0.013 AUC** |
+
+**Takeaways:**
+- Auxiliary-table enrichment is the single biggest lever (+0.013–0.017 AUC).
+- Temporal split holds AUC but degrades calibration (expected drift signature).
+- Isotonic calibration fixes LR's ECE (0.32→0.002) at zero AUC cost — LR becomes best-calibrated model.
+- Full-scale training (230k rows) adds +0.007–0.013 AUC; HGB reaches 0.773 AUC, near published full-data baselines.
+- The `DAYS_EMPLOYED==365243` sentinel indicator has negligible predictive effect on top of enrichment.
+
+See `docs/home_credit_results.md` for full tables with ±std and artifact paths.
 
 ## Suggested commit sequence
 1. `chore: scaffold reproducible research repository`

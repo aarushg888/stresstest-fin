@@ -59,4 +59,10 @@ def convert(input_path: Path = INPUT_PATH, output_path: Path = OUTPUT_PATH) -> d
 
 
 if __name__ == "__main__":
-    convert()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", type=Path, default=INPUT_PATH)
+    parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+    args = parser.parse_args()
+    convert(args.input, args.output)

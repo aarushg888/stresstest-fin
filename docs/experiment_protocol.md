@@ -57,6 +57,34 @@ Conversion: `scripts/convert_home_credit_sentinel_aware.py`.
 Configs:    `configs/home_credit_baseline.yaml`,
             `configs/home_credit_sentinel_aware.yaml`.
 
+## Home Credit Phase 2 — enriched features + temporal split + calibration
+
+Phase 2 (added after the initial external validation) extends the study:
+
+1. **Feature enrichment** — the six auxiliary tables (previous_application,
+   bureau, bureau_balance, credit_card_balance, installments_payments,
+   POS_CASH_balance) are aggregated per customer (count, mean/max/min/sum/std
+   on informative numeric columns, nunique on categoricals) and left-joined
+   into the application table → 307,511 × 293.
+   - Scripts: `scripts/download_home_credit_tables.py` (requires
+     `KAGGLE_API_TOKEN` env var — the modern KGAT_ token is Bearer-auth and
+     the legacy kaggle.json username/key Basic-auth is NOT accepted by
+     kagglehub 1.0.2 for this competition), `scripts/build_home_credit_features.py`.
+   - Configs: `configs/home_credit_enriched.yaml`,
+     `configs/home_credit_enriched_sentinel_aware.yaml`.
+2. **Temporal (recency-proxy) split** — a `chronological` split on
+   `prev_APP_RECENCY_DAYS` (max DAYS_DECISION per customer = most recent
+   previous-application decision, days before the current application).
+   Earliest 75% train, latest 25% test; rows with no previous applications
+   (NaN recency) sort first and land in train. This is a recency ordering,
+   NOT true calendar time, because all DAYS_* values are relative to each
+   customer's own application date. Config: `configs/home_credit_temporal.yaml`.
+   Split support: `data.split_data` handles numeric time columns.
+3. **LR calibration** — `--calibrate sigmoid|isotonic` wraps LR in
+   `CalibratedClassifierCV(cv=3)`. Rank-preserving (AUC unchanged).
+4. **HGB balanced sample weights** — `--hgb-balanced-weights` passes
+   inverse-frequency sample weights to HistGradientBoostingClassifier.
+
 ## Five-seed protocol
 
 For every (variant, model) pair we run a stratified random train/test
@@ -114,10 +142,14 @@ does not accept sparse matrices. Numeric scaling is dropped for trees.
 
 ## Limitations (must be reported)
 
-1. **Random stratified splitting is not temporal validation.** Both
-   HELOC and Home Credit here are evaluated under i.i.d. stratified
-   splits. Real production decisions face distribution shift; these
-   results do not estimate performance under that shift.
+1. **Random stratified splitting is not temporal validation.** HELOC and
+   the initial Home Credit runs use i.i.d. stratified splits. Phase 2 adds
+   a Home Credit temporal (recency-proxy) split, which is a documented
+   approximation of true calendar time — all DAYS_* values are relative to
+   each customer's own application date, so the proxy orders by recency of
+   previous-application activity rather than absolute date. Real production
+   decisions face distribution shift; the temporal results estimate
+   performance under mild drift but should not be over-generalized.
 2. **Both datasets concern high-impact credit decisions and are
    research-only.** No model output here is suitable for any real
    lending or automated decision.

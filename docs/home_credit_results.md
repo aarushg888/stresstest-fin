@@ -111,3 +111,143 @@ claim sentinel-aware improves permutation stability here.
    compare these absolute numbers to published full-data results.
 4. **Random stratified split, not temporal validation** — see limitations in
    `docs/experiment_protocol.md`.
+
+---
+
+# Phase 2 — Enriched features + temporal split + calibration
+
+Research/education only. Phase 2 adds the Home Credit auxiliary tables
+(previous_application, bureau, bureau_balance, credit_card_balance,
+installments_payments, POS_CASH_balance) aggregated per customer
+(`scripts/build_home_credit_features.py`), giving 171 new features
+(307,511 × 293). Raw tables downloaded via
+`scripts/download_home_credit_tables.py` (KAGGLE_API_TOKEN required).
+
+## Enriched — aggregate (seeds 11/22/33/44/55, 60k train cap)
+
+Artifact: `artifacts/home_credit_enriched_summary.csv`
+
+| model | ROC-AUC (mean±std) | AP (mean±std) | Brier (mean±std) | ECE-10 (mean±std) | pred-sens (mean±std) |
+| --- | --- | --- | --- | --- | --- |
+| logistic_regression | 0.7582±0.0032 | 0.2310±0.0032 | 0.1942±0.0010 | 0.3194±0.0020 | 0.0169±0.0078 |
+| hist_gradient_boosting | 0.7594±0.0019 | 0.2389±0.0020 | 0.0680±0.0001 | 0.0037±0.0003 | 0.0161±0.0073 |
+| random_forest | 0.7501±0.0033 | 0.2216±0.0027 | 0.1002±0.0004 | 0.1713±0.0007 | 0.0295±0.0167 |
+
+## Enriched sentinel-aware — aggregate
+
+Artifact: `artifacts/home_credit_enriched_sentinel_aware_summary.csv`
+
+| model | ROC-AUC (mean±std) | AP (mean±std) | Brier (mean±std) | ECE-10 (mean±std) | pred-sens (mean±std) |
+| --- | --- | --- | --- | --- | --- |
+| logistic_regression | 0.7585±0.0030 | 0.2315±0.0029 | 0.1942±0.0010 | 0.3192±0.0018 | 0.0035±0.0024 |
+| hist_gradient_boosting | 0.7594±0.0024 | 0.2384±0.0029 | 0.0680±0.0001 | 0.0043±0.0010 | 0.0175±0.0106 |
+| random_forest | 0.7500±0.0032 | 0.2209±0.0030 | 0.1003±0.0004 | 0.1715±0.0008 | 0.0292±0.0210 |
+
+## Enriched vs raw-feature deltas (enriched − baseline)
+
+| model | Δ ROC-AUC | Δ AP | Δ Brier | Δ ECE-10 |
+| --- | --- | --- | --- | --- |
+| logistic_regression | +0.0171 | +0.0163 | −0.0086 | −0.0179 |
+| hist_gradient_boosting | +0.0158 | +0.0166 | −0.0008 | +0.0011 |
+| random_forest | +0.0128 | +0.0107 | −0.0172 | −0.0380 |
+
+The auxiliary tables add real signal: AUC improves +0.013 to +0.017 across
+models, AP +0.011 to +0.017, and Brier/ECE improve for LR and RF. The
+sentinel-aware indicator again has negligible effect on top of enrichment.
+
+## Temporal split (recency proxy) — aggregate (seeds 11/22/33/44/55)
+
+Artifact: `artifacts/home_credit_temporal_summary.csv`
+Split: `chronological` on `prev_APP_RECENCY_DAYS` (max DAYS_DECISION per
+customer = most recent previous-application decision, days before the
+current application). Train = 230,634 earliest rows, test = 76,877 most
+recent rows. Target rate: train 7.79%, test 8.94% — real distribution drift.
+
+| model | ROC-AUC (mean±std) | AP (mean±std) | Brier (mean±std) | ECE-10 (mean±std) | pred-sens (mean±std) |
+| --- | --- | --- | --- | --- | --- |
+| logistic_regression | 0.7578±0.0018 | 0.2484±0.0029 | 0.2070±0.0044 | 0.3268±0.0060 | 0.0220±0.0093 |
+| hist_gradient_boosting | 0.7574±0.0026 | 0.2537±0.0038 | 0.0743±0.0003 | 0.0054±0.0015 | 0.0199±0.0065 |
+| random_forest | 0.7491±0.0023 | 0.2387±0.0035 | 0.1080±0.0006 | 0.1771±0.0018 | 0.0244±0.0084 |
+
+Under the temporal split, AUC holds within ~0.001-0.003 of the random-split
+enriched numbers (no catastrophic degradation), AP is higher (test has more
+positives), but Brier/ECE degrade slightly for all models — the models are
+less well-calibrated on the shifted test distribution. This is the expected
+signature of mild distribution drift, not a failure.
+
+## LR calibration (Platt/isotonic) — aggregate (seeds 11/22/33/44/55)
+
+Artifacts: `artifacts/home_credit_enriched_cal_sigmoid_summary.csv`,
+`artifacts/home_credit_enriched_cal_isotonic_summary.csv`
+Applied via CalibratedClassifierCV(cv=3) on the enriched LR pipeline.
+AUC is unchanged (calibration is rank-preserving).
+
+| method | ROC-AUC | AP | Brier (mean±std) | ECE-10 (mean±std) |
+| --- | --- | --- | --- | --- |
+| none (enriched LR) | 0.7582 | 0.2310 | 0.1942±0.0010 | 0.3194±0.0020 |
+| sigmoid (Platt) | 0.7583 | 0.2308 | 0.0685±0.0004 | 0.0133±0.0069 |
+| isotonic | 0.7584 | 0.2314 | 0.0681±0.0002 | 0.0023±0.0006 |
+
+Both methods fix LR calibration dramatically: Brier drops from 0.194 to
+~0.068 (matching HGB) and ECE from 0.319 to 0.013 (sigmoid) / 0.002
+(isotonic, matching HGB). Isotonic is the best-calibrating method here.
+
+## HGB balanced sample weights — aggregate
+
+Artifact: `artifacts/home_credit_enriched_hgb_balanced_summary.csv`
+
+| variant | ROC-AUC | AP | Brier (mean±std) | ECE-10 (mean±std) |
+| --- | --- | --- | --- | --- |
+| HGB plain | 0.7594 | 0.2389 | 0.0680±0.0001 | 0.0037±0.0003 |
+| HGB balanced | 0.7613 | 0.2423 | 0.1717±0.0030 | 0.2922±0.0066 |
+
+Balanced sample weights improve ranking slightly (AUC +0.002, AP +0.003)
+but destroy calibration (Brier 0.068→0.172, ECE 0.004→0.292): the weights
+shift the predicted probability distribution away from the true base rate.
+If used, must be paired with recalibration.
+
+## Phase 2 interpretation notes
+
+1. **Enrichment is the single biggest lever** found so far (+0.013 to
+   +0.017 AUC). The auxiliary tables carry signal that the application
+   table alone does not.
+2. **Temporal split exposes mild drift**: AUC holds, calibration degrades.
+   The recency proxy is a documented approximation of true calendar time.
+3. **LR calibration is a near-free win**: isotonic recalibration makes LR
+   the best-calibrated model (ECE 0.002) at zero AUC cost.
+4. **Balanced HGB weights trade calibration for ranking** — not a
+   free lunch without recalibration.
+5. Full-scale (no 60k cap) results appended when complete
+   (`artifacts/home_credit_enriched_fullscale_seed_*.json`).
+
+## Full-scale (no training cap) — seeds 11/22
+
+Artifacts: `artifacts/home_credit_enriched_fullscale_seed_11.json`,
+`artifacts/home_credit_enriched_fullscale_seed_22.json`
+Training: all available rows after chronological/temporal split
+(230,633 rows for these seeds). No permutation (--skip-permutation).
+
+| seed | model | ROC-AUC | AP | Brier | ECE-10 |
+| --- | --- | --- | --- | --- | --- |
+| 11 | logistic_regression | 0.7677 | 0.2411 | 0.1950 | 0.3264 |
+| 11 | hist_gradient_boosting | 0.7726 | 0.2581 | 0.0670 | 0.0015 |
+| 11 | random_forest | 0.7588 | 0.2319 | 0.0993 | 0.1694 |
+| 22 | logistic_regression | 0.7629 | 0.2398 | 0.1940 | 0.3235 |
+| 22 | hist_gradient_boosting | 0.7730 | 0.2607 | 0.0669 | 0.0032 |
+| 22 | random_forest | 0.7602 | 0.2344 | 0.0991 | 0.1689 |
+
+| model | mean AUC | mean AP | mean Brier | mean ECE-10 | vs 60k cap (Δ AUC) |
+| --- | --- | --- | --- | --- | --- |
+| logistic_regression | 0.7653 | 0.2405 | 0.1945 | 0.3250 | +0.0071 |
+| hist_gradient_boosting | 0.7728 | 0.2594 | 0.0670 | 0.0024 | +0.0134 |
+| random_forest | 0.7595 | 0.2332 | 0.0992 | 0.1692 | +0.0094 |
+
+Removing the 60k training cap adds 3.8× more training data (230k vs 60k)
+and yields consistent AUC gains (+0.007 to +0.013). HGB at 0.773 AUC
+approaches published full-data baselines (~0.78-0.80). LR calibration
+remains poor (ECE ~0.32) without explicit calibration; see Phase 2
+calibration results.
+
+---
+
+*End of Phase 2. All experimental sections complete.*
